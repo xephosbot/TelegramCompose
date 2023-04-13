@@ -127,3 +127,8 @@ fun TelegramFlow.secretChatFlow(): Flow<TdApi.SecretChat> = this.getUpdatesFlowO
  * unread, has changed. This update is sent only if the message database is used.
  */
 fun TelegramFlow.unreadChatCountFlow(): Flow<TdApi.UpdateUnreadChatCount> = this.getUpdatesFlowOfType()
+
+/**
+ * emits [TdApi.UpdateChatFilters] if list of chat filters or a chat filter has changed.
+ */
+fun TelegramFlow.chatFiltersFlow(): Flow<TdApi.UpdateChatFilters> = this.getUpdatesFlowOfType()

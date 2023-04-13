@@ -64,7 +64,7 @@ class TelegramFlow(
             }
         }.shareIn(
             scope = flowScope,
-            replay = 1,
+            replay = 100,
             started = SharingStarted.Eagerly
         )
     }
