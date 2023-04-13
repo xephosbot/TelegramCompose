@@ -24,7 +24,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -44,8 +43,11 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xbot.telegramcompose.R
 import com.xbot.telegramcompose.model.Chat
+import com.xbot.telegramcompose.model.ChatFilter
+import com.xbot.telegramcompose.ui.components.AnimatedFilterChip
 import com.xbot.telegramcompose.ui.components.AnimatedFloatingActionButton
 import com.xbot.telegramcompose.ui.components.AvatarImage
+import com.xbot.telegramcompose.ui.components.ChipGroup
 import com.xbot.telegramcompose.ui.components.CollapsingTopAppBar
 import com.xbot.telegramcompose.ui.components.CustomScaffold
 import com.xbot.telegramcompose.ui.components.ShapeableImage
@@ -59,11 +61,13 @@ fun HomeRoute(
     viewModel: HomeViewMode = hiltViewModel(),
 ) {
     val chats = viewModel.chats.collectAsStateWithLifecycle()
+    val chatFilters = viewModel.chatFilters.collectAsStateWithLifecycle()
 
     HomeScreen(
         modifier = modifier,
         getFilePath = viewModel::getFilePath,
-        chats = chats.value
+        chats = chats.value,
+        chatFilters = chatFilters.value
     )
 }
 
@@ -71,8 +75,9 @@ fun HomeRoute(
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
-    getFilePath: suspend (TdApi.File) -> String,
-    chats: List<Chat>
+    getFilePath: suspend (TdApi.File) -> String?,
+    chats: List<Chat>,
+    chatFilters: List<ChatFilter>
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     val lazyListState = rememberLazyListState()
@@ -107,7 +112,14 @@ fun HomeScreen(
                     }
                 },
                 scrollBehavior = scrollBehavior,
-                content = { /*TODO*/ }
+                content = {
+                    ChatFilters(
+                        filters = chatFilters,
+                        onSelect = { _, _ ->
+
+                        }
+                    )
+                }
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -142,7 +154,7 @@ fun HomeScreen(
 @Composable
 private fun HomeScreenChatList(
     modifier: Modifier = Modifier,
-    getFilePath: suspend (TdApi.File) -> String,
+    getFilePath: suspend (TdApi.File) -> String?,
     chats: List<Chat>,
     listState: LazyListState,
     contentPadding: PaddingValues
@@ -172,7 +184,7 @@ private fun HomeScreenChatList(
 private fun LazyItemScope.ChatListItem(
     chat: Chat,
     showDivider: Boolean,
-    getFilePath: suspend (TdApi.File) -> String,
+    getFilePath: suspend (TdApi.File) -> String?,
     onClick: () -> Unit
 ) {
     Box(modifier = Modifier.animateItemPlacement()) {
@@ -243,6 +255,45 @@ private fun LazyItemScope.ChatListItem(
                         end = 24.dp
                     ),
                 color = MaterialTheme.colorScheme.surfaceVariant
+            )
+        }
+    }
+}
+
+@ExperimentalMaterial3Api
+@Composable
+private fun ChatFilters(
+    filters: List<ChatFilter>,
+    onSelect: (List<Long>, Boolean) -> Unit
+) {
+    ChipGroup(
+        alignment = Alignment.CenterHorizontally,
+        spacing = 8.dp
+    ) {
+        if (filters.size > 1) {
+            //val selected = filters.filter { it.selected }.containsAll(filters)
+
+            AnimatedFilterChip(
+                //selected = selected,
+                selected = true,
+                onClick = {
+                    //onSelect(filters.map { it.id }, !selected)
+                },
+                label = { Text(text = "All") },
+                selectedColor = MaterialTheme.colorScheme.tertiaryContainer
+            )
+        }
+
+        filters.forEach { filter ->
+            //val selected = filters.filter { it.selected }.contains(filter)
+
+            AnimatedFilterChip(
+                //selected = selected,
+                selected = true,
+                onClick = {
+                    //onSelect(listOf(filter.id), !selected)
+                },
+                label = { Text(text = filter.title) }
             )
         }
     }
