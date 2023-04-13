@@ -11,8 +11,10 @@ import com.xbot.tdlibx.coroutines.setTdlibParameters
 import com.xbot.tdlibx.extensions.ChatKtx
 import com.xbot.tdlibx.extensions.UserKtx
 import com.xbot.tdlibx.flows.authorizationStateFlow
+import com.xbot.tdlibx.flows.chatFiltersFlow
 import com.xbot.tdlibx.flows.chatLastMessageFlow
 import com.xbot.tdlibx.flows.chatPositionFlow
+import com.xbot.tdlibx.flows.chatReadInboxFlow
 import com.xbot.tdlibx.flows.newChatFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
@@ -57,6 +59,10 @@ class TelegramRepository @Inject constructor(
                 else -> null
             }
         }
+
+    val chatReadInboxFlow = api.chatReadInboxFlow()
+
+    val chatFiltersFlow = api.chatFiltersFlow()
 
     private suspend fun checkRequiredParams(state: TdApi.AuthorizationState?) {
         when (state) {

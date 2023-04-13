@@ -36,7 +36,7 @@ import java.io.File
 fun AvatarImage(
     photo: ProfilePhoto?,
     contentDescription: String,
-    getFilePath: suspend (TdApi.File) -> String,
+    getFilePath: suspend (TdApi.File) -> String?,
     modifier: Modifier = Modifier,
     shape: Shape = CircleShape,
     borderWidth: Dp = 0.dp,
