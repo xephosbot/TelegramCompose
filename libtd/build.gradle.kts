@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "org.drinkless.td.libcore"
+    namespace = "org.drinkless.tdlib"
     compileSdk = libs.versions.compileSdk.get().toInt()
     sourceSets.getByName("main").jniLibs {
         srcDir("src/main/libs")
