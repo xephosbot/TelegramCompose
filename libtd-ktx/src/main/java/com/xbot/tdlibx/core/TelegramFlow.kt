@@ -12,9 +12,8 @@ import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import org.drinkless.td.libcore.telegram.Client
-import org.drinkless.td.libcore.telegram.TdApi
-import java.io.Closeable
+import org.drinkless.tdlib.Client
+import org.drinkless.tdlib.TdApi
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -25,7 +24,7 @@ import kotlin.coroutines.resumeWithException
  */
 class TelegramFlow(
     val defaultDispatcher: CoroutineDispatcher = Dispatchers.IO
-) : Closeable {
+) {
     /**
      * Telegram [Client] instance.
      */
@@ -64,8 +63,8 @@ class TelegramFlow(
             }
         }.shareIn(
             scope = flowScope,
-            replay = 100,
-            started = SharingStarted.Eagerly
+            started = SharingStarted.Lazily,
+            replay = 1000
         )
     }
 
@@ -116,12 +115,5 @@ class TelegramFlow(
      */
     suspend fun sendFunctionLaunch(function: TdApi.Function) {
         sendFunctionAsync<TdApi.Ok>(function)
-    }
-
-    /**
-     * Closes Client.
-     */
-    override fun close() {
-        client?.close()
     }
 }

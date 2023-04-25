@@ -1,6 +1,6 @@
 package com.xbot.tdlibx.core
 
-import org.drinkless.td.libcore.telegram.TdApi
+import org.drinkless.tdlib.TdApi
 
 sealed class TelegramException(override val message: String?) : Throwable(message) {
     object ClientNotAttached : TelegramException(
