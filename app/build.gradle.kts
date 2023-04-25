@@ -1,5 +1,7 @@
 @file:Suppress("UnstableApiUsage")
 
+import com.android.build.gradle.internal.cxx.configure.gradleLocalProperties
+
 plugins {
     id("com.android.application")
     id("dagger.hilt.android.plugin")
@@ -24,6 +26,12 @@ android {
             useSupportLibrary = true
         }
         proguardFiles("proguard-rules.pro")
+
+        val apiId = gradleLocalProperties(rootDir).getProperty("tdlib.api.id")
+        val apiHash = gradleLocalProperties(rootDir).getProperty("tdlib.api.hash")
+
+        buildConfigField("int", "API_ID", apiId)
+        buildConfigField("String", "API_HASH", apiHash)
     }
 
     signingConfigs {

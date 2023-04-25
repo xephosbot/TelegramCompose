@@ -10,7 +10,6 @@ import com.xbot.tdlibx.coroutines.setAuthenticationPhoneNumber
 import com.xbot.tdlibx.coroutines.setTdlibParameters
 import com.xbot.tdlibx.flows.authorizationStateFlow
 import com.xbot.telegramcompose.BuildConfig
-import com.xbot.telegramcompose.R
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import org.drinkless.tdlib.TdApi
@@ -47,8 +46,8 @@ class AuthRepository @Inject constructor(
                 useChatInfoDatabase = true,
                 useMessageDatabase = true,
                 useSecretChats = false,
-                apiId = context.resources.getInteger(R.integer.telegram_api_id),
-                apiHash = context.getString(R.string.telegram_api_hash),
+                apiId = BuildConfig.API_ID,
+                apiHash = BuildConfig.API_HASH,
                 systemLanguageCode = Locale.current.language,
                 deviceModel = Build.MODEL,
                 systemVersion = Build.VERSION.RELEASE,
