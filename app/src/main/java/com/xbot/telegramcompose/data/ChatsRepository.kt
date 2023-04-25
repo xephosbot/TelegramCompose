@@ -2,22 +2,44 @@ package com.xbot.telegramcompose.data
 
 import android.util.Log
 import com.xbot.tdlibx.core.TelegramException
+import com.xbot.tdlibx.core.TelegramFlow
+import com.xbot.tdlibx.coroutines.downloadFile
+import com.xbot.tdlibx.coroutines.getChatHistory
+import com.xbot.tdlibx.coroutines.loadChats
+import com.xbot.tdlibx.extensions.ChatKtx
+import com.xbot.tdlibx.flows.chatDefaultDisableNotificationFlow
+import com.xbot.tdlibx.flows.chatDraftMessageFlow
+import com.xbot.tdlibx.flows.chatFoldersFlow
+import com.xbot.tdlibx.flows.chatHasScheduledMessagesFlow
+import com.xbot.tdlibx.flows.chatIsBlockedFlow
+import com.xbot.tdlibx.flows.chatIsMarkedAsUnreadFlow
+import com.xbot.tdlibx.flows.chatLastMessageFlow
+import com.xbot.tdlibx.flows.chatNotificationSettingsFlow
+import com.xbot.tdlibx.flows.chatPermissionsFlow
+import com.xbot.tdlibx.flows.chatPhotoFlow
+import com.xbot.tdlibx.flows.chatPositionFlow
+import com.xbot.tdlibx.flows.chatReadInboxFlow
+import com.xbot.tdlibx.flows.chatReadOutboxFlow
+import com.xbot.tdlibx.flows.chatReplyMarkupFlow
+import com.xbot.tdlibx.flows.chatTitleFlow
+import com.xbot.tdlibx.flows.chatUnreadMentionCountFlow
+import com.xbot.tdlibx.flows.newChatFlow
 import com.xbot.telegramcompose.model.Chat
 import com.xbot.telegramcompose.model.ChatFilter
+import com.xbot.telegramcompose.model.Message
+import com.xbot.telegramcompose.model.MessageContent
 import com.xbot.telegramcompose.model.ProfilePhoto
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
-import org.drinkless.td.libcore.telegram.TdApi
+import org.drinkless.tdlib.TdApi
 import java.util.NavigableSet
 import java.util.TreeSet
 import java.util.concurrent.ConcurrentHashMap
@@ -26,21 +48,147 @@ import javax.inject.Singleton
 
 @Singleton
 class ChatsRepository @Inject constructor(
-    private val telegramRepository: TelegramRepository,
+    override val api: TelegramFlow,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO
-)  {
+) : ChatKtx {
 
     private val chats: ConcurrentHashMap<Long, TdApi.Chat> = ConcurrentHashMap()
     private val mainChatList: NavigableSet<OrderedChat> = TreeSet()
 
-    private val mainChatListMutex = Mutex()
-    private val chatsChangedFlow = MutableSharedFlow<Unit>(replay = 1)
+    var selectedChatList: TdApi.ChatList = TdApi.ChatListMain()
 
-    val chatsFlow = chatsChangedFlow.asSharedFlow()
-        .map {
-            mainChatListMutex.withLock {
-                mainChatList.map { orderedChat ->
-                    val chat = chats.getValue(orderedChat.chatId)
+    private val mainChatListMutex = Mutex()
+
+    val chatFolderFlow: Flow<List<ChatFilter>> = api.chatFoldersFlow()
+        .map { updateChatFilters ->
+            updateChatFilters.chatFolders.map { chatFilter ->
+                ChatFilter(
+                    id = chatFilter.id,
+                    title = chatFilter.title
+                )
+            }
+        }
+
+    val chatsFlow: Flow<List<Chat>> = merge(
+        api.newChatFlow()
+            .mapNotNull { newChat ->
+                chats.put(newChat.id, newChat)?.let { existingChat ->
+                    existingChat.positions = emptyArray()
+                    setChatPositions(existingChat, newChat.positions)
+                }
+            },
+        api.chatTitleFlow()
+            .mapNotNull { updateChat ->
+                chats[updateChat.chatId]?.let { existingChat ->
+                    existingChat.title = updateChat.title
+                }
+            },
+        api.chatPhotoFlow()
+            .mapNotNull { updateChat ->
+                chats[updateChat.chatId]?.let { existingChat ->
+                    existingChat.photo = updateChat.photo
+                }
+            },
+        api.chatLastMessageFlow()
+            .mapNotNull { updateChat ->
+                chats[updateChat.chatId]?.let { existingChat ->
+                    existingChat.lastMessage = updateChat.lastMessage
+                    setChatPositions(existingChat, updateChat.positions)
+                }
+            },
+        api.chatPositionFlow()
+            .filter { it.position.list.constructor == selectedChatList.constructor }
+            .mapNotNull { updateChat ->
+                chats[updateChat.chatId]?.let { existingChat ->
+                    val index = existingChat.positions.indexOfFirstOrLast {
+                        it.list.constructor == TdApi.ChatListMain.CONSTRUCTOR
+                    }
+                    val size = existingChat.positions.size
+                        .plus((updateChat.position.order != 0L).toInt())
+                        .minus((index < existingChat.positions.size).toInt())
+                    val newPositions = arrayOfNulls<TdApi.ChatPosition>(size)
+                    var pos = 0
+                    if (updateChat.position.order != 0L) {
+                        newPositions[pos++] = updateChat.position
+                    }
+                    existingChat.positions.forEachIndexed { i, chatPosition ->
+                        if (index != i) newPositions[pos++] = chatPosition
+                    }
+                    setChatPositions(existingChat, newPositions)
+                }
+            },
+        api.chatReadInboxFlow()
+            .mapNotNull { updateChat ->
+                chats[updateChat.chatId]?.let { existingChat ->
+                    existingChat.lastReadInboxMessageId = updateChat.lastReadInboxMessageId
+                    existingChat.unreadCount = updateChat.unreadCount
+                }
+            },
+        api.chatReadOutboxFlow()
+            .mapNotNull { updateChat ->
+                chats[updateChat.chatId]?.let { existingChat ->
+                    existingChat.lastReadOutboxMessageId = updateChat.lastReadOutboxMessageId
+                }
+            },
+        api.chatUnreadMentionCountFlow()
+            .mapNotNull { updateChat ->
+                chats[updateChat.chatId]?.let { existingChat ->
+                    existingChat.unreadMentionCount = updateChat.unreadMentionCount
+                }
+            },
+        api.chatReplyMarkupFlow()
+            .mapNotNull { updateChat ->
+                chats[updateChat.chatId]?.let { existingChat ->
+                    existingChat.replyMarkupMessageId = updateChat.replyMarkupMessageId
+                }
+            },
+        api.chatDraftMessageFlow()
+            .mapNotNull { updateChat ->
+                chats[updateChat.chatId]?.let { existingChat ->
+                    existingChat.draftMessage = updateChat.draftMessage
+                    setChatPositions(existingChat, updateChat.positions)
+                }
+            },
+        api.chatPermissionsFlow()
+            .mapNotNull { updateChat ->
+                chats[updateChat.chatId]?.let { existingChat ->
+                    existingChat.permissions = updateChat.permissions
+                }
+            },
+        api.chatNotificationSettingsFlow()
+            .mapNotNull { updateChat ->
+                chats[updateChat.chatId]?.let { existingChat ->
+                    existingChat.notificationSettings = updateChat.notificationSettings
+                }
+            },
+        api.chatDefaultDisableNotificationFlow()
+            .mapNotNull { updateChat ->
+                chats[updateChat.chatId]?.let { existingChat ->
+                    existingChat.defaultDisableNotification = updateChat.defaultDisableNotification
+                }
+            },
+        api.chatIsMarkedAsUnreadFlow()
+            .mapNotNull { updateChat ->
+                chats[updateChat.chatId]?.let { existingChat ->
+                    existingChat.isMarkedAsUnread = updateChat.isMarkedAsUnread
+                }
+            },
+        api.chatIsBlockedFlow()
+            .mapNotNull { updateChat ->
+                chats[updateChat.chatId]?.let { existingChat ->
+                    existingChat.isBlocked = updateChat.isBlocked
+                }
+            },
+        api.chatHasScheduledMessagesFlow()
+            .mapNotNull { updateChat ->
+                chats[updateChat.chatId]?.let { existingChat ->
+                    existingChat.hasScheduledMessages = updateChat.hasScheduledMessages
+                }
+            }
+    ).map {
+        mainChatListMutex.withLock {
+            mainChatList.mapNotNull { orderedChat ->
+                chats[orderedChat.chatId]?.let { chat ->
                     Chat(
                         id = chat.id,
                         title = chat.title.ifEmpty { "Deleted account" },
@@ -51,88 +199,48 @@ class ChatsRepository @Inject constructor(
                             )
                         },
                         isPinned = orderedChat.position.isPinned,
+                        isMuted = chat.notificationSettings.useDefaultMuteFor,
                         unreadCount = chat.unreadCount,
-                        lastMessage = chat.lastMessage
+                        lastMessage = chat.lastMessage?.let { lastMessage ->
+                            val lastMessages = if (false) {
+                                api.getChatHistory(chat.id, 0, 0, 10, false).messages
+                                    .filter { it.mediaAlbumId == lastMessage.mediaAlbumId }
+                                    .asReversed()
+                            } else null
+
+                            Message(
+                                id = lastMessage.id,
+                                date = lastMessage.date.toLong(),
+                                content = lastMessages?.map { message ->
+                                    MessageContent.create(message.content)
+                                } ?: listOf(MessageContent.create(lastMessage.content))
+                            )
+                        }
                     )
                 }
             }
         }
+    }.flowOn(dispatcher)
 
-    val chatFiltersFlow = telegramRepository.chatFiltersFlow
-        .map { updateChatFilters ->
-            updateChatFilters.chatFilters.map { chatFilter ->
-                ChatFilter(
-                    id = chatFilter.id,
-                    title = chatFilter.title
-                )
+    suspend fun loadChatList(chatList: TdApi.ChatList, limit: Int) {
+        tailrec suspend fun loadChats() {
+            if (limit <= mainChatList.size) return
+            try {
+                api.loadChats(chatList, limit - mainChatList.size)
+            } catch (exception: TelegramException) {
+                when (exception) {
+                    is TelegramException.Error -> {
+                        if (exception.code == 404) return
+                        Log.e(TAG, "Code: ${exception.code}, Msg: ${exception.message}")
+                    }
+                    else -> {
+                        Log.e(TAG, exception.message ?: "Unknown")
+                    }
+                }
             }
+            loadChats()
         }
-
-    suspend fun load(limit: Int) = withContext(dispatcher) {
-        awaitAll(
-            async {
-                telegramRepository.loadChats(limit)
-            },
-            async {
-                telegramRepository.newChatFlow
-                    .onEach { newChat ->
-                        val existingChat = chats.put(newChat.id, newChat)
-                        if (existingChat != null) {
-                            val positions = existingChat.positions.clone()
-                            existingChat.positions = emptyArray()
-                            setChatPositions(existingChat, positions)
-                            chatsChangedFlow.emit(Unit)
-                        }
-                    }.collect()
-            },
-            async {
-                telegramRepository.chatLastMessageFlow
-                    .onEach { updateChat ->
-                        val existingChat = chats[updateChat.chatId]
-                        if (existingChat != null) {
-                            existingChat.lastMessage = updateChat.lastMessage
-                            setChatPositions(existingChat, updateChat.positions)
-                            chatsChangedFlow.emit(Unit)
-                        }
-                    }.collect()
-            },
-            async {
-                telegramRepository.chatPositionFlow
-                    .onEach { updateChat ->
-                        val existingChat = chats[updateChat.chatId]
-                        if (existingChat != null) {
-                            val index = existingChat.positions.indexOfFirstOrLast {
-                                it.list.constructor == TdApi.ChatListMain.CONSTRUCTOR
-                            }
-                            val size = existingChat.positions.size
-                                .plus((updateChat.position.order != 0L).toInt())
-                                .minus((index < existingChat.positions.size).toInt())
-                            val newPositions = arrayOfNulls<TdApi.ChatPosition>(size)
-                            var pos = 0
-                            if (updateChat.position.order != 0L) {
-                                newPositions[pos++] = updateChat.position
-                            }
-                            for ((i, chatPosition) in existingChat.positions.withIndex()) {
-                                if (index != i) newPositions[pos++] = chatPosition
-                            }
-                            assert(pos == newPositions.size)
-                            setChatPositions(existingChat, newPositions)
-                            chatsChangedFlow.emit(Unit)
-                        }
-                    }.collect()
-            },
-            async {
-                telegramRepository.chatReadInboxFlow
-                    .onEach { updateChat ->
-                        val existingChat = chats[updateChat.chatId]
-                        if (existingChat != null) {
-                            existingChat.lastReadInboxMessageId = updateChat.lastReadInboxMessageId
-                            existingChat.unreadCount = updateChat.unreadCount
-                            chatsChangedFlow.emit(Unit)
-                        }
-                    }.collect()
-            }
-        )
+        loadChats()
     }
 
     suspend fun downloadableFile(file: TdApi.File): String? =
@@ -140,14 +248,14 @@ class ChatsRepository @Inject constructor(
             !it.local.isDownloadingCompleted
         }?.id?.let { fileId ->
             try {
-                telegramRepository.downloadFile(fileId).local.path
-            } catch (error: TelegramException) {
-                when (error) {
+                api.downloadFile(fileId, 1, 0, 0, true).local.path
+            } catch (exception: TelegramException) {
+                when (exception) {
                     is TelegramException.Error -> {
-                        Log.e("TelegramFlowError", "Code: ${error.code}, msg: ${error.message}")
+                        Log.e(TAG, "Code: ${exception.code}, msg: ${exception.message}")
                     }
                     else -> {
-                        Log.e("TelegramFlowError", "Msg: ${error.message}")
+                        Log.e(TAG, "Msg: ${exception.message}")
                     }
                 }
                 null
@@ -155,59 +263,20 @@ class ChatsRepository @Inject constructor(
         } ?: file.local.path
 
     private suspend fun setChatPositions(chat: TdApi.Chat, positions: Array<TdApi.ChatPosition?>) {
-        for (position in chat.positions) {
-            if (position.list.constructor == TdApi.ChatListMain.CONSTRUCTOR) {
-                val isRemoved = mainChatListMutex.withLock {
-                    mainChatList.remove(OrderedChat(chat.id, position))
-                }
-                assert(isRemoved)
+        chat.positions.asSequence()
+            .filter { it.list.constructor == TdApi.ChatListMain.CONSTRUCTOR }
+            .forEach { position ->
+                mainChatListMutex.withLock { mainChatList.remove(OrderedChat(chat.id, position)) }
             }
-        }
         chat.positions = positions
-        for (position in chat.positions) {
-            if (position.list.constructor == TdApi.ChatListMain.CONSTRUCTOR) {
-                val isAdded = mainChatListMutex.withLock {
-                    mainChatList.add(OrderedChat(chat.id, position))
-                }
-                assert(isAdded)
+        chat.positions.asSequence()
+            .filter { it.list.constructor == TdApi.ChatListMain.CONSTRUCTOR }
+            .forEach { position ->
+                mainChatListMutex.withLock { mainChatList.add(OrderedChat(chat.id, position)) }
             }
-        }
     }
 
-    data class OrderedChat (
-        val chatId: Long,
-        val position: TdApi.ChatPosition
-    ) : Comparable<OrderedChat> {
-
-        override fun compareTo(other: OrderedChat): Int {
-            if (position.order != other.position.order) {
-                return if (other.position.order < position.order) -1 else 1
-            }
-            return if (chatId != other.chatId) {
-                if (other.chatId < chatId) -1 else 1
-            } else 0
-        }
-
-        override fun equals(other: Any?): Boolean {
-            val o = other as OrderedChat
-            return this.chatId == o.chatId && this.position.order == o.position.order
-        }
-
-        override fun hashCode(): Int {
-            var result = chatId.hashCode()
-            result = 31 * result + position.hashCode()
-            return result
-        }
+    private companion object {
+        const val TAG = "CHATS_REPOSITORY"
     }
-}
-
-fun Boolean.toInt() = if (this) 1 else 0
-
-inline fun <T> Array<out T>.indexOfFirstOrLast(predicate: (T) -> Boolean): Int {
-    var i = 0
-    for (index in indices) {
-        if (predicate(this[index])) break
-        i++
-    }
-    return i
 }

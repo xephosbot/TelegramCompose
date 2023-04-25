@@ -3,8 +3,8 @@ package com.xbot.telegramcompose.ui.features.login
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.xbot.telegramcompose.data.AuthRepository
 import com.xbot.telegramcompose.data.AuthState
-import com.xbot.telegramcompose.data.TelegramRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
@@ -17,7 +17,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class LoginViewModel @Inject constructor(
-    private val repository: TelegramRepository
+    private val repository: AuthRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LoginUiState(AuthState.Unknown))
@@ -31,7 +31,7 @@ class LoginViewModel @Inject constructor(
         viewModelScope.launch {
             repository.authStateFlow
                 .collect { state ->
-                    Log.e("STATUS_TAG_VIEWMODEL", state.javaClass.simpleName.toString())
+                    Log.e("STATUS_TAG_VIEWMODEL", state.javaClass.name.toString())
                     _uiState.value = LoginUiState(authState = state)
                 }
         }

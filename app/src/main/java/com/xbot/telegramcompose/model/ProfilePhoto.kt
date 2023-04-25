@@ -1,6 +1,6 @@
 package com.xbot.telegramcompose.model
 
-import org.drinkless.td.libcore.telegram.TdApi
+import org.drinkless.tdlib.TdApi
 
 data class ProfilePhoto(
     val thumbnail: ByteArray,

@@ -7,12 +7,14 @@ import com.xbot.telegramcompose.model.Chat
 import com.xbot.telegramcompose.model.ChatFilter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.drinkless.td.libcore.telegram.TdApi
+import org.drinkless.tdlib.TdApi
 import javax.inject.Inject
 
 @HiltViewModel
@@ -27,17 +29,30 @@ class HomeViewMode @Inject constructor(
             initialValue = emptyList()
         )
 
-    val chatFilters: StateFlow<List<ChatFilter>> = repository.chatFiltersFlow
+    val chatFilters: StateFlow<List<ChatFilter>> = repository.chatFolderFlow
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000L),
             initialValue = emptyList()
         )
 
+    private val _selectedChatFilter: MutableStateFlow<Int> = MutableStateFlow(0)
+    val selectedChatFilter = _selectedChatFilter.asStateFlow()
+
     init {
         viewModelScope.launch(Dispatchers.IO) {
-            repository.load(LOADING_CHATS_COUNT)
+            launch { repository.loadChatList(
+                chatList = when(_selectedChatFilter.value) {
+                    0 -> TdApi.ChatListMain()
+                    else -> TdApi.ChatListFolder(_selectedChatFilter.value)
+                },
+                limit = LOADING_CHATS_COUNT
+            ) }
         }
+    }
+
+    fun setSelectedFilter(id: Int) {
+        _selectedChatFilter.value = id
     }
 
     suspend fun getFilePath(file: TdApi.File): String? =

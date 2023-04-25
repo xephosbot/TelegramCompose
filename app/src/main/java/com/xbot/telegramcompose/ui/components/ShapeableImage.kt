@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.painter.Painter
@@ -29,7 +30,7 @@ import coil.request.ImageRequest
 import coil.size.Size
 import com.xbot.telegramcompose.model.ProfilePhoto
 import com.xbot.telegramcompose.ui.utils.rememberInitialsDrawable
-import org.drinkless.td.libcore.telegram.TdApi
+import org.drinkless.tdlib.TdApi
 import java.io.File
 
 @Composable
@@ -72,6 +73,34 @@ fun AvatarImage(
         shape = shape,
         borderWidth = borderWidth,
         borderColor = borderColor
+    )
+}
+
+@Composable
+fun ShapeableImage(
+    bitmap: ImageBitmap,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    shape: Shape = CircleShape,
+    borderWidth: Dp = 0.dp,
+    borderColor: Color = MaterialTheme.colorScheme.outlineVariant
+) {
+    Image(
+        bitmap = bitmap,
+        contentDescription = contentDescription,
+        contentScale = ContentScale.Crop,
+        modifier = Modifier
+            .then(modifier)
+            .graphicsLayer {
+                this.clip = true
+                this.shape = shape
+            }
+            .conditional(borderWidth > 0.dp) {
+                border(
+                    border = BorderStroke(borderWidth, borderColor),
+                    shape = shape
+                ).padding(borderWidth)
+            }
     )
 }
 

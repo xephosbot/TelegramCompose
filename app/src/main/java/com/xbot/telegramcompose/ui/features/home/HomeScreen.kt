@@ -1,6 +1,10 @@
 package com.xbot.telegramcompose.ui.features.home
 
+import android.net.Uri
 import android.text.format.DateUtils
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -8,13 +12,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Search
@@ -31,16 +36,22 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.rememberAsyncImagePainter
+import coil.request.ImageRequest
 import com.xbot.telegramcompose.R
 import com.xbot.telegramcompose.model.Chat
 import com.xbot.telegramcompose.model.ChatFilter
@@ -51,23 +62,28 @@ import com.xbot.telegramcompose.ui.components.ChipGroup
 import com.xbot.telegramcompose.ui.components.CollapsingTopAppBar
 import com.xbot.telegramcompose.ui.components.CustomScaffold
 import com.xbot.telegramcompose.ui.components.ShapeableImage
+import com.xbot.telegramcompose.ui.components.bitmapFromByteArray
 import com.xbot.telegramcompose.ui.shapes.FlowerShape
+import com.xbot.telegramcompose.ui.theme.elevation
 import kotlinx.coroutines.launch
-import org.drinkless.td.libcore.telegram.TdApi
+import org.drinkless.tdlib.TdApi
 
 @Composable
 fun HomeRoute(
     modifier: Modifier = Modifier,
     viewModel: HomeViewMode = hiltViewModel(),
 ) {
-    val chats = viewModel.chats.collectAsStateWithLifecycle()
-    val chatFilters = viewModel.chatFilters.collectAsStateWithLifecycle()
+    val chats by viewModel.chats.collectAsStateWithLifecycle()
+    val chatFilters by viewModel.chatFilters.collectAsStateWithLifecycle()
+    val selectedChatFilter by viewModel.selectedChatFilter.collectAsStateWithLifecycle()
 
     HomeScreen(
         modifier = modifier,
         getFilePath = viewModel::getFilePath,
-        chats = chats.value,
-        chatFilters = chatFilters.value
+        setSelectedFilter = viewModel::setSelectedFilter,
+        chats = chats,
+        selectedChatFilter = selectedChatFilter,
+        chatFilters = chatFilters
     )
 }
 
@@ -76,13 +92,21 @@ fun HomeRoute(
 fun HomeScreen(
     modifier: Modifier = Modifier,
     getFilePath: suspend (TdApi.File) -> String?,
+    setSelectedFilter: (Int) -> Unit,
     chats: List<Chat>,
+    selectedChatFilter: Int,
     chatFilters: List<ChatFilter>
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     val lazyListState = rememberLazyListState()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    val singlePhotoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+        onResult = { uri -> selectedImageUri = uri }
+    )
 
     CustomScaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -99,13 +123,23 @@ fun HomeScreen(
                         )
                     }
                     IconButton(
-                        onClick = { /*TODO*/ }
+                        onClick = {
+                            singlePhotoPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        }
                     ) {
+                        val painter = rememberAsyncImagePainter(
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .error(R.drawable.avatar_img)
+                                .data(selectedImageUri)
+                                .build()
+                        )
+
                         ShapeableImage(
-                            painter = painterResource(id = R.drawable.avatar_img),
+                            painter = painter,
                             contentDescription = null,
-                            modifier = Modifier
-                                .size(30.dp),
+                            modifier = Modifier.size(30.dp),
                             shape = FlowerShape(),
                             borderWidth = 1.dp
                         )
@@ -115,9 +149,8 @@ fun HomeScreen(
                 content = {
                     ChatFilters(
                         filters = chatFilters,
-                        onSelect = { _, _ ->
-
-                        }
+                        selectedChatFilter = selectedChatFilter,
+                        onSelectFilter = setSelectedFilter
                     )
                 }
             )
@@ -151,6 +184,7 @@ fun HomeScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun HomeScreenChatList(
     modifier: Modifier = Modifier,
@@ -169,6 +203,7 @@ private fun HomeScreenChatList(
             key = { _, chat -> chat.id }
         ) { index, chat ->
             ChatListItem(
+                modifier = Modifier.animateItemPlacement(),
                 chat = chat,
                 showDivider = index < chats.lastIndex,
                 getFilePath = getFilePath
@@ -179,15 +214,16 @@ private fun HomeScreenChatList(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LazyItemScope.ChatListItem(
+private fun ChatListItem(
+    modifier: Modifier = Modifier,
     chat: Chat,
     showDivider: Boolean,
     getFilePath: suspend (TdApi.File) -> String?,
     onClick: () -> Unit
 ) {
-    Box(modifier = Modifier.animateItemPlacement()) {
+    Box(modifier = modifier) {
         ListItem(
             modifier = Modifier.clickable { onClick() },
             leadingContent = {
@@ -210,12 +246,18 @@ private fun LazyItemScope.ChatListItem(
                     horizontalAlignment = Alignment.End,
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(text = chat.lastMessage?.date?.let {
-                        (it.toLong() * 1000).toRelativeTimeSpan()
-                    } ?: "Unknown time")
+                    Text(
+                        text = chat.lastMessage?.date?.let {
+                            (it * 1000).toRelativeTimeSpan()
+                        } ?: "Unknown time"
+                    )
                     if (chat.unreadCount > 0) {
                         Badge(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer
+                            containerColor = if (chat.isMuted) {
+                                MaterialTheme.colorScheme.secondaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.primaryContainer
+                            }
                         ) {
                             Text(text = chat.unreadCount.toString())
                         }
@@ -223,28 +265,33 @@ private fun LazyItemScope.ChatListItem(
                 }
             },
             supportingText = {
-                Text(
-                    text = chat.lastMessage?.content?.let {
-                        when (it.constructor) {
-                            TdApi.MessageText.CONSTRUCTOR -> (it as TdApi.MessageText).text.text
-                            TdApi.MessageVideo.CONSTRUCTOR -> "Video message"
-                            TdApi.MessageCall.CONSTRUCTOR -> "Call message"
-                            TdApi.MessageAudio.CONSTRUCTOR -> "Audio message"
-                            TdApi.MessageSticker.CONSTRUCTOR -> "Sticker message"
-                            TdApi.MessageAnimation.CONSTRUCTOR -> "Animation message"
-                            TdApi.MessageLocation.CONSTRUCTOR -> "Location message"
-                            TdApi.MessageVoiceNote.CONSTRUCTOR -> "Voice note message"
-                            TdApi.MessageVideoNote.CONSTRUCTOR -> "Video note message"
-                            TdApi.MessageContactRegistered.CONSTRUCTOR -> "Joined to Telegram!"
-                            TdApi.MessageChatDeleteMember.CONSTRUCTOR -> "${(it as TdApi.MessageChatDeleteMember).userId} left the chat"
-                            else -> "Unsupported message"
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    chat.lastMessage?.content?.forEach { content ->
+                        content.thumbnail?.let {
+                            ShapeableImage(
+                                modifier = Modifier.size(16.dp),
+                                bitmap = bitmapFromByteArray(it).asImageBitmap(),
+                                contentDescription = "",
+                                shape = RoundedCornerShape(4.dp)
+                            )
                         }
-                    } ?: "Empty message",
-                    overflow = TextOverflow.Ellipsis,
-                    maxLines = 1
-                )
+                    }
+
+                    Text(
+                        text = chat.lastMessage?.content?.first()?.text?.ifEmpty { "Deleted account" } ?: "Empty message",
+                        overflow = TextOverflow.Ellipsis,
+                        maxLines = 1
+                    )
+                }
             },
-            tonalElevation = if (chat.isPinned) 1.dp else 0.dp
+            tonalElevation = if (chat.isPinned) {
+                MaterialTheme.elevation.level1
+            } else {
+                MaterialTheme.elevation.level0
+            }
         )
         if (showDivider) {
             Divider(
@@ -264,20 +311,18 @@ private fun LazyItemScope.ChatListItem(
 @Composable
 private fun ChatFilters(
     filters: List<ChatFilter>,
-    onSelect: (List<Long>, Boolean) -> Unit
+    selectedChatFilter: Int,
+    onSelectFilter: (Int) -> Unit,
 ) {
     ChipGroup(
         alignment = Alignment.CenterHorizontally,
         spacing = 8.dp
     ) {
-        if (filters.size > 1) {
-            //val selected = filters.filter { it.selected }.containsAll(filters)
-
+        if (filters.isNotEmpty()) {
             AnimatedFilterChip(
-                //selected = selected,
-                selected = true,
+                selected = selectedChatFilter == 0,
                 onClick = {
-                    //onSelect(filters.map { it.id }, !selected)
+                    onSelectFilter(0)
                 },
                 label = { Text(text = "All") },
                 selectedColor = MaterialTheme.colorScheme.tertiaryContainer
@@ -285,13 +330,10 @@ private fun ChatFilters(
         }
 
         filters.forEach { filter ->
-            //val selected = filters.filter { it.selected }.contains(filter)
-
             AnimatedFilterChip(
-                //selected = selected,
-                selected = true,
+                selected = filter.id == selectedChatFilter,
                 onClick = {
-                    //onSelect(listOf(filter.id), !selected)
+                    onSelectFilter(filter.id)
                 },
                 label = { Text(text = filter.title) }
             )
@@ -305,15 +347,3 @@ private fun Long.toRelativeTimeSpan(): String =
         System.currentTimeMillis(),
         DateUtils.SECOND_IN_MILLIS
     ).toString()
-
-private fun Int.toTime(): String {
-    val duration = this.toLong()
-    val hours: Long = (duration / (60 * 60))
-    val minutes = (duration % (60 * 60) / (60))
-    val seconds = (duration % (60 * 60) % (60))
-    return when {
-        minutes == 0L && hours == 0L -> String.format("0:%02d", seconds)
-        hours == 0L -> String.format("%02d:%02d", minutes, seconds)
-        else -> String.format("%02d:%02d:%02d", hours, minutes, seconds)
-    }
-}
