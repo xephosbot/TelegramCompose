@@ -216,9 +216,9 @@ public final class Client {
 
     private final int nativeClientId;
 
-    private static final ConcurrentHashMap<Integer, ExceptionHandler> defaultExceptionHandlers = new ConcurrentHashMap<Integer, ExceptionHandler>();
-    private static final ConcurrentHashMap<Integer, Handler> updateHandlers = new ConcurrentHashMap<Integer, Handler>();
-    private static final ConcurrentHashMap<Long, Handler> handlers = new ConcurrentHashMap<Long, Handler>();
+    private static final ConcurrentHashMap<Integer, ExceptionHandler> defaultExceptionHandlers = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<Integer, Handler> updateHandlers = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<Long, Handler> handlers = new ConcurrentHashMap<>();
     private static final AtomicLong currentQueryId = new AtomicLong();
     private static final AtomicLong clientCount = new AtomicLong();
 

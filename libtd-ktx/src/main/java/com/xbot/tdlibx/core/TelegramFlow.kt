@@ -7,6 +7,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.shareIn
@@ -30,49 +31,34 @@ class TelegramFlow(
      */
     var client: Client? = null
 
-    /**
-     * Telegram flow main update events flow
-     */
-    lateinit var updateEventsFlow: Flow<TdApi.Object>
-
-    /**
-     * Telegram flow [CoroutineScope] used for suspend functions.
-     */
     private val flowScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
-     * Attach instance to the existing native Telegram client or create one
-     * @param existingClient set an existing client to attach, null by default
+     * Telegram flow main update events flow
      */
-    fun attachClient(existingClient: Client? = null) {
-        if (client != null) return
+    val updateEventsFlow: Flow<TdApi.Object> = callbackFlow {
+        val resultHandler = Client.ResultHandler { trySend(it) }
 
-        updateEventsFlow = callbackFlow {
-            val resultHandler = Client.ResultHandler { trySend(it) }
-
-            client = existingClient
-                ?.also { it.setUpdatesHandler(resultHandler) }
-                ?: Client.create(
-                    resultHandler,
-                    null,
-                    null
-                )
-
-            awaitClose {
-                client?.setUpdatesHandler(null)
-            }
-        }.shareIn(
-            scope = flowScope,
-            started = SharingStarted.Lazily,
-            replay = 1000
+        client = Client.create(
+            resultHandler,
+            null,
+            null
         )
-    }
+
+        awaitClose {
+            client?.setUpdatesHandler(null)
+        }
+    }.shareIn(
+        scope = flowScope,
+        started = SharingStarted.Eagerly,
+        replay = 1
+    )
 
     /**
      * Return data flow from Telegram API of the given type [T]
      */
     inline fun <reified T : TdApi.Object> getUpdatesFlowOfType() =
-        updateEventsFlow.filterIsInstance<T>()
+        updateEventsFlow.buffer(64).filterIsInstance<T>()
 
     /**
      * Sends a request to the TDLib and expect a result.
